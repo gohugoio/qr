@@ -164,7 +164,7 @@ func (s Alpha) String() string {
 
 func (s Alpha) Check() error {
 	for _, c := range s {
-		if strings.IndexRune(alphabet, c) < 0 {
+		if !strings.ContainsRune(alphabet, c) {
 			return fmt.Errorf("non-alphanumeric string %#q", string(s))
 		}
 	}

@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"os"
 	"testing"
 )
 
@@ -19,9 +18,6 @@ func TestPNG(t *testing.T) {
 		t.Fatal(err)
 	}
 	pngdat := c.PNG()
-	if true {
-		os.WriteFile("x.png", pngdat, 0o666)
-	}
 	m, err := png.Decode(bytes.NewBuffer(pngdat))
 	if err != nil {
 		t.Fatal(err)

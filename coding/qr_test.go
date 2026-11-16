@@ -5,95 +5,17 @@
 package coding
 
 import (
+	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gohugoio/qr/gf256"
-	"github.com/gohugoio/qr/libqrencode"
 )
-
-func test(t *testing.T, v Version, l Level, text ...Encoding) bool {
-	s := ""
-	ty := libqrencode.EightBit
-	switch x := text[0].(type) {
-	case String:
-		s = string(x)
-	case Alpha:
-		s = string(x)
-		ty = libqrencode.Alphanumeric
-	case Num:
-		s = string(x)
-		ty = libqrencode.Numeric
-	}
-	key, err := libqrencode.Encode(libqrencode.Version(v), libqrencode.Level(l), ty, s)
-	if err != nil {
-		t.Errorf("libqrencode.Encode(%v, %v, %d, %#q): %v", v, l, ty, s, err)
-		return false
-	}
-	mask := (^key.Pixel[8][2]&1)<<2 | (key.Pixel[8][3]&1)<<1 | (^key.Pixel[8][4] & 1)
-	p, err := NewPlan(v, l, Mask(mask))
-	if err != nil {
-		t.Errorf("NewPlan(%v, L, %d): %v", v, err, mask)
-		return false
-	}
-	if len(p.Pixel) != len(key.Pixel) {
-		t.Errorf("%v: NewPlan uses %dx%d, libqrencode uses %dx%d", v, len(p.Pixel), len(p.Pixel), len(key.Pixel), len(key.Pixel))
-		return false
-	}
-	c, err := p.Encode(text...)
-	if err != nil {
-		t.Errorf("Encode: %v", err)
-		return false
-	}
-	badpix := 0
-Pixel:
-	for y, prow := range p.Pixel {
-		for x, pix := range prow {
-			pix &^= Black
-			if c.Black(x, y) {
-				pix |= Black
-			}
-
-			keypix := key.Pixel[y][x]
-			want := Pixel(0)
-			switch {
-			case keypix&libqrencode.Finder != 0:
-				want = Position.Pixel()
-			case keypix&libqrencode.Alignment != 0:
-				want = Alignment.Pixel()
-			case keypix&libqrencode.Timing != 0:
-				want = Timing.Pixel()
-			case keypix&libqrencode.Format != 0:
-				want = Format.Pixel()
-				want |= OffsetPixel(pix.Offset()) // sic
-				want |= pix & Invert
-			case keypix&libqrencode.PVersion != 0:
-				want = PVersion.Pixel()
-			case keypix&libqrencode.DataECC != 0:
-				if pix.Role() == Check || pix.Role() == Extra {
-					want = pix.Role().Pixel()
-				} else {
-					want = Data.Pixel()
-				}
-				want |= OffsetPixel(pix.Offset())
-				want |= pix & Invert
-			default:
-				want = Unused.Pixel()
-			}
-			if keypix&libqrencode.Black != 0 {
-				want |= Black
-			}
-			if pix != want {
-				t.Errorf("%v/%v: Pixel[%d][%d] = %v, want %v %#x", v, mask, y, x, pix, want, keypix)
-				if badpix++; badpix >= 100 {
-					t.Errorf("stopping after %d bad pixels", badpix)
-					break Pixel
-				}
-			}
-		}
-	}
-	return badpix == 0
-}
 
 var input = []Encoding{
 	String("hello"),
@@ -104,20 +26,118 @@ var input = []Encoding{
 	Alpha("ABC"),
 }
 
-func TestVersion(t *testing.T) {
-	badvers := 0
-Version:
-	for v := Version(1); v <= 40; v++ {
-		for l := L; l <= H; l++ {
-			for _, in := range input {
-				if !test(t, v, l, in) {
-					if badvers++; badvers >= 10 {
-						t.Errorf("stopping after %d bad versions", badvers)
-						break Version
-					}
-				}
+// gridHash returns the hash used in testdata/libqrencode.golden.
+func gridHash(grid [][]byte) string {
+	h := sha256.New()
+	for _, row := range grid {
+		h.Write(row)
+	}
+	return hex.EncodeToString(h.Sum(nil)[:16])
+}
+
+// planGrid renders an encoded plan in the golden grid alphabet.
+func planGrid(p *Plan, c *Code) [][]byte {
+	grid := make([][]byte, len(p.Pixel))
+	for y, row := range p.Pixel {
+		grid[y] = make([]byte, len(row))
+		for x, pix := range row {
+			var b byte
+			switch pix.Role() {
+			case Position:
+				b = 'p'
+			case Alignment:
+				b = 'a'
+			case Timing:
+				b = 't'
+			case Format:
+				b = 'f'
+			case PVersion:
+				b = 'v'
+			case Data, Check, Extra:
+				b = 'd'
+			default:
+				b = 'u'
 			}
+			if c.Black(x, y) {
+				b -= 'a' - 'A'
+			}
+			grid[y][x] = b
 		}
+	}
+	return grid
+}
+
+// TestVersion checks every version, level and a few inputs against output
+// recorded from libqrencode.
+func TestVersion(t *testing.T) {
+	f, err := os.Open("testdata/libqrencode.golden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	levels := map[string]Level{"L": L, "M": M, "Q": Q, "H": H}
+	n, bad := 0, 0
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 7 {
+			t.Fatalf("malformed golden line %q", line)
+		}
+		v, _ := strconv.Atoi(fields[0])
+		l, ok := levels[fields[1]]
+		if !ok {
+			t.Fatalf("bad level in %q", line)
+		}
+		var enc Encoding
+		switch fields[2] {
+		case "String":
+			enc = String(fields[3])
+		case "Alpha":
+			enc = Alpha(fields[3])
+		case "Num":
+			enc = Num(fields[3])
+		default:
+			t.Fatalf("bad encoding in %q", line)
+		}
+		mask, _ := strconv.Atoi(fields[4])
+		size, _ := strconv.Atoi(fields[5])
+
+		n++
+		p, err := NewPlan(Version(v), l, Mask(mask))
+		if err != nil {
+			t.Errorf("NewPlan(%d, %v, %d): %v", v, l, mask, err)
+			bad++
+			continue
+		}
+		if len(p.Pixel) != size {
+			t.Errorf("%d/%v: NewPlan uses %dx%d, libqrencode uses %dx%d", v, l, len(p.Pixel), len(p.Pixel), size, size)
+			bad++
+			continue
+		}
+		c, err := p.Encode(enc)
+		if err != nil {
+			t.Errorf("Encode(%v): %v", enc, err)
+			bad++
+			continue
+		}
+		if got := gridHash(planGrid(p, c)); got != fields[6] {
+			t.Errorf("%d/%v/%d %v: grid hash %s, want %s", v, l, mask, enc, got, fields[6])
+			bad++
+		}
+		if bad >= 10 {
+			t.Fatalf("stopping after %d bad cases", bad)
+		}
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if want := 40 * 4 * len(input); n != want {
+		t.Errorf("golden file has %d cases, want %d", n, want)
 	}
 }
 
