@@ -9,7 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"io/ioutil"
+	"os"
 	"testing"
 )
 
@@ -20,7 +20,7 @@ func TestPNG(t *testing.T) {
 	}
 	pngdat := c.PNG()
 	if true {
-		ioutil.WriteFile("x.png", pngdat, 0o666)
+		os.WriteFile("x.png", pngdat, 0o666)
 	}
 	m, err := png.Decode(bytes.NewBuffer(pngdat))
 	if err != nil {

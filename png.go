@@ -332,20 +332,6 @@ func (b *bitWriter) repeat1(n, d int) {
 	}
 }
 
-func (b *bitWriter) run(v byte, n int) {
-	if n == 0 {
-		return
-	}
-	b.byte(v)
-	if n-1 < 3 {
-		for i := 0; i < n-1; i++ {
-			b.byte(v)
-		}
-	} else {
-		b.repeat(n-1, 1)
-	}
-}
-
 type adigest struct {
 	a, b uint32
 }
