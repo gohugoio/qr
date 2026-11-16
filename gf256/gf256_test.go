@@ -71,7 +71,7 @@ func TestGaussJordan(t *testing.T) {
 		}
 	}
 	b := []uint{0, 1, 2, 3, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 26, 27}
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		bi := b[i]
 		if m[i][bi/8]&(1<<(7-bi%8)) == 0 {
 			for j := i + 1; ; j++ {
@@ -137,7 +137,7 @@ func BenchmarkECC(b *testing.B) {
 }
 
 func TestGen(t *testing.T) {
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		_, lg := f.gen(i)
 		if lg[0] != 0 {
 			t.Errorf("#%d: %x", i, lg)
@@ -170,8 +170,8 @@ func TestExhaustive(t *testing.T) {
 			α++
 		}
 		f := NewField(poly, α)
-		for p := 0; p < 256; p++ {
-			for q := 0; q < 256; q++ {
+		for p := range 256 {
+			for q := range 256 {
 				fm := int(f.Mul(byte(p), byte(q)))
 				pm := mul(p, q, poly)
 				if fm != pm {
@@ -184,7 +184,7 @@ func TestExhaustive(t *testing.T) {
 
 func generates(α, poly int) bool {
 	x := α
-	for i := 0; i < 254; i++ {
+	for range 254 {
 		if x == 1 {
 			return false
 		}

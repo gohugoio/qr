@@ -47,7 +47,7 @@ func BlogECC(rs *RSEncoder, m []byte, check []byte) {
 	// Divide p by gen, leaving the remainder in p[len(data):].
 	// p[0] is the most significant term in p, and
 	// gen[0] is the most significant term in the generator.
-	for i := 0; i < len(m); i++ {
+	for i := range m {
 		k := f.Mul(p[i], f.Inv(gen[0])) // k = pi / g0
 		// p -= k·g
 		for j, g := range gen {
