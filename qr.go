@@ -9,6 +9,7 @@ package qr // import "github.com/gohugoio/qr"
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 
@@ -26,8 +27,43 @@ const (
 	H              // 65% redundant
 )
 
-// Encode returns an encoding of text at the given error correction level.
-func Encode(text string, level Level) (*Code, error) {
+// DefaultScale is the Scale used when Options.Scale is zero.
+const DefaultScale = 8
+
+// Options configures Encode.
+type Options struct {
+	// Level is the error correction level. The zero value is L.
+	Level Level
+
+	// Scale is the number of image pixels per QR module.
+	// Zero means DefaultScale.
+	Scale int
+
+	// FgColor is the color of the dark modules. Nil means black.
+	FgColor color.Color
+
+	// BgColor is the color of the light modules and the quiet zone
+	// around the code. Nil means white. It may be transparent,
+	// e.g. color.Transparent.
+	//
+	// Note that most QR readers need dark modules on a lighter background,
+	// so a transparent background is only scannable if whatever is behind
+	// it is light enough.
+	BgColor color.Color
+}
+
+// Encode returns an encoding of text using the given options.
+func Encode(text string, opts Options) (*Code, error) {
+	if opts.Level < L || opts.Level > H {
+		return nil, fmt.Errorf("invalid error correction level %d", opts.Level)
+	}
+	if opts.Scale == 0 {
+		opts.Scale = DefaultScale
+	}
+	if opts.Scale < 1 {
+		return nil, fmt.Errorf("invalid scale %d", opts.Scale)
+	}
+
 	// Pick data encoding, smallest first.
 	// We could split the string and use different encodings
 	// but that seems like overkill for now.
@@ -42,7 +78,7 @@ func Encode(text string, level Level) (*Code, error) {
 	}
 
 	// Pick size.
-	l := coding.Level(level)
+	l := coding.Level(opts.Level)
 	var v coding.Version
 	for v = coding.MinVersion; ; v++ {
 		if v > coding.MaxVersion {
@@ -65,7 +101,14 @@ func Encode(text string, level Level) (*Code, error) {
 
 	// TODO: Pick appropriate mask.
 
-	return &Code{cc.Bitmap, cc.Size, cc.Stride, 8}, nil
+	return &Code{
+		Bitmap:  cc.Bitmap,
+		Size:    cc.Size,
+		Stride:  cc.Stride,
+		Scale:   opts.Scale,
+		FgColor: opts.FgColor,
+		BgColor: opts.BgColor,
+	}, nil
 }
 
 // A Code is a square pixel grid.
@@ -75,6 +118,23 @@ type Code struct {
 	Size   int    // number of pixels on a side
 	Stride int    // number of bytes per row
 	Scale  int    // number of image pixels per QR pixel
+
+	FgColor color.Color // color of dark modules; nil means black
+	BgColor color.Color // color of light modules and border; nil means white
+}
+
+// palette returns the code's two colors, dark first, and whether they are
+// the default opaque black and white.
+func (c *Code) palette() (fg, bg color.NRGBA, isDefault bool) {
+	fg, bg = color.NRGBA{A: 0xFF}, color.NRGBA{0xFF, 0xFF, 0xFF, 0xFF}
+	if c.FgColor != nil {
+		fg = color.NRGBAModel.Convert(c.FgColor).(color.NRGBA)
+	}
+	if c.BgColor != nil {
+		bg = color.NRGBAModel.Convert(c.BgColor).(color.NRGBA)
+	}
+	isDefault = fg == color.NRGBA{A: 0xFF} && bg == color.NRGBA{0xFF, 0xFF, 0xFF, 0xFF}
+	return
 }
 
 // Black returns true if the pixel at (x,y) is black.
@@ -85,12 +145,18 @@ func (c *Code) Black(x, y int) bool {
 
 // Image returns an Image displaying the code.
 func (c *Code) Image() image.Image {
-	return &codeImage{c}
+	fg, bg, isDefault := c.palette()
+	if isDefault {
+		return &codeImage{c, color.GrayModel, blackColor, whiteColor}
+	}
+	return &codeImage{c, color.Palette{fg, bg}, fg, bg}
 }
 
 // codeImage implements image.Image
 type codeImage struct {
 	*Code
+	model  color.Model
+	fg, bg color.Color
 }
 
 var (
@@ -104,12 +170,12 @@ func (c *codeImage) Bounds() image.Rectangle {
 }
 
 func (c *codeImage) At(x, y int) color.Color {
-	if c.Black(x, y) {
-		return blackColor
+	if c.Black(x/c.Scale-4, y/c.Scale-4) {
+		return c.fg
 	}
-	return whiteColor
+	return c.bg
 }
 
 func (c *codeImage) ColorModel() color.Model {
-	return color.GrayModel
+	return c.model
 }

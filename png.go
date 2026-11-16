@@ -46,12 +46,29 @@ func (w *pngWriter) encode(c *Code) []byte {
 	// Header block
 	binary.BigEndian.PutUint32(w.tmp[0:4], uint32((siz+8)*scale))
 	binary.BigEndian.PutUint32(w.tmp[4:8], uint32((siz+8)*scale))
+	// The image data is always one bit per pixel, 0 for dark and 1 for light.
+	// With the default colors that is plain 1-bit grayscale; otherwise we
+	// use a 2-entry palette (dark, light), which leaves the data unchanged.
+	fg, bg, isDefault := c.palette()
 	w.tmp[8] = 1 // 1-bit
-	w.tmp[9] = 0 // gray
+	if isDefault {
+		w.tmp[9] = 0 // gray
+	} else {
+		w.tmp[9] = 3 // indexed color
+	}
 	w.tmp[10] = 0
 	w.tmp[11] = 0
 	w.tmp[12] = 0
 	w.writeChunk("IHDR", w.tmp[:13])
+
+	if !isDefault {
+		plte := [6]byte{fg.R, fg.G, fg.B, bg.R, bg.G, bg.B}
+		w.writeChunk("PLTE", plte[:])
+		if fg.A != 0xFF || bg.A != 0xFF {
+			trns := [2]byte{fg.A, bg.A}
+			w.writeChunk("tRNS", trns[:])
+		}
+	}
 
 	// Comment
 	w.writeChunk("tEXt", comment)
@@ -140,14 +157,17 @@ func (b *bitWriter) writeCode(c *Code) {
 			}
 		}
 		if j < len(row) {
-			row[j] = z
+			// Left-align the final partial byte, padding with light pixels.
+			row[j] = z<<(8-nz) | (1<<(8-nz) - 1)
 		}
 		for _, z := range row {
 			b.byte(z)
 		}
 
 		// Scale-1 copies.
-		b.repeat((scale-1)*(1+n), 1+n)
+		if scale > 1 {
+			b.repeat((scale-1)*(1+n), 1+n)
+		}
 
 		b.adler32.WriteN(row, scale)
 	}
