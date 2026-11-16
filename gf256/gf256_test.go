@@ -146,7 +146,7 @@ func TestGen(t *testing.T) {
 }
 
 func TestReducible(t *testing.T) {
-	var count = []int{1, 2, 3, 6, 9, 18, 30, 56, 99, 186} // oeis.org/A1037
+	count := []int{1, 2, 3, 6, 9, 18, 30, 56, 99, 186} // oeis.org/A1037
 	for i, want := range count {
 		n := 0
 		for p := 1 << uint(i+2); p < 1<<uint(i+3); p++ {
