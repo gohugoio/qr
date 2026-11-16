@@ -3,14 +3,14 @@
 // license that can be found in the LICENSE file.
 
 // Package coding implements low-level QR coding details.
-package coding // import "rsc.io/qr/coding"
+package coding // import "github.com/gohugoio/qr/coding"
 
 import (
 	"fmt"
 	"strconv"
 	"strings"
 
-	"rsc.io/qr/gf256"
+	"github.com/gohugoio/qr/gf256"
 )
 
 // Field is the field for QR error correction.
@@ -23,8 +23,10 @@ var Field = gf256.NewField(0x11d, 2)
 // the more information the code can store.
 type Version int
 
-const MinVersion = 1
-const MaxVersion = 40
+const (
+	MinVersion = 1
+	MaxVersion = 40
+)
 
 func (v Version) String() string {
 	return strconv.Itoa(int(v))

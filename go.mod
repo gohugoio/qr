@@ -1,2 +1,3 @@
-module rsc.io/qr
-go 1.18
+module github.com/gohugoio/qr
+
+go 1.26

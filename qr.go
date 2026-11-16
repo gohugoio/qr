@@ -5,14 +5,14 @@
 /*
 Package qr encodes QR codes.
 */
-package qr // import "rsc.io/qr"
+package qr // import "github.com/gohugoio/qr"
 
 import (
 	"errors"
 	"image"
 	"image/color"
 
-	"rsc.io/qr/coding"
+	"github.com/gohugoio/qr/coding"
 )
 
 // A Level denotes a QR error correction level.
@@ -86,7 +86,6 @@ func (c *Code) Black(x, y int) bool {
 // Image returns an Image displaying the code.
 func (c *Code) Image() image.Image {
 	return &codeImage{c}
-
 }
 
 // codeImage implements image.Image
